@@ -7,73 +7,64 @@ library("ggplot2")
 library("terra")
 
 
-
+# Set up shiny app interface
 ui=shinyUI(fluidPage(
-    options(shiny.maxRequestSize = 600*1024^2),
-    headerPanel("Flood Prediction"),
-    sidebarLayout(
-
-        sidebarPanel(
-            helpText("Predict Flood Areas Using a DEM and Water Level"),
-            
-            fileInput('beach_dem', 'Choose Beach DEM Layer', multiple=FALSE, accept='tif'),
-            
-            numericInput(
-                "dem_water_level",
-                "DEM Water Level",
-                value = 30,
-                min = 20,
-                max = 50,
-                step = 0.05,
-                width = NULL),
-            
-            sliderInput("current_water_level",
-                        "Water Level (m):",
-                        min = 20,
-                        max = 50,
-                        value = 30)
-            ),
-            
-        mainPanel(
-            plotOutput("mapPlot")
-        )
-    )))
-   
+  options(shiny.maxRequestSize = 600*1024^2),
+  headerPanel("Flood Prediction"),
+  sidebarLayout(
     
+    sidebarPanel(
+      helpText("Predict Flood Areas Using a DEM and Water Level"),
+        
+      # Create an input for the beach dem file to be placed 
+      fileInput('beach_dem', 'Choose Beach DEM Layer', multiple=FALSE, accept='tif'),
+      
+      # Create a slider which adjusts the flood level
+      sliderInput("current_water_level",
+                  "Water Level (m):",
+                  min = 640,
+                  max = 675,
+                  step = 0.05,
+                  value = 640)
+    ),
+    # Set the main panel to be a map of the inputed beach dem
+    mainPanel(
+      plotOutput("mapPlot")
+    )
+  )))
+
+
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
+  # Assign the reactive beach dem to a variable so that further analysis can be performed
+  beach_dem <- reactive({input$beach_dem$datapath})
+  # Assign the reactive water level input to a variable so that further analysis can be performed
+  current_water_level <- reactive({input$current_water_level})
+  
+  
+  output$mapPlot <- renderPlot({
+    #Rastify the beach dem input
+    beach_dem <- rast(beach_dem())
     
-    library("terra")
+    #Identify areas under inputed water level
+    flood_area <- beach_dem<= current_water_level()
     
-    beach_dem <- reactive(input$beach_dem$datapath)
-    dem_water_level <-reactive(input$dem_water_level)
-    current_water_level <- reactive(input$current_water_level)
+    # Reclassify new raster (0 = NODATA, 1 = 1)
+    ## Create reclassification matrix
+    m <- c(0, NA, 1, 1)
+    rcl_matrix <- matrix(m, ncol = 2, byrow = TRUE)
+    
+    ## Reclassify the flooded area dem
+    rcl_flood_area <- classify(flood_area, rcl_matrix, include.lowest = TRUE)
     
     
-    output$mapPlot <- renderPlot({
-        
-        ##Identify lowest value in DEM
-        beach_dem<- rast(beach_dem)
-        dem_minmax <- minmax(beach_dem)
-        min_dem <- dem_minmax[1]
-        # calculate rise (current - dem water level)
-        rise<-(current_water_level - dem_water_level)
-        
-        # Raster calculator (dem <= dem+rise)
-        flood_area <- beach_dem<=(min_dem+rise)
-        
-        # Reclassify new raster (0 = NODATA, 1 = 1)
-        ## Create reclassification matrix
-        m <- c(0, NA, 1, 1)
-        rcl_matrix <- matrix(m, ncol = 2, byrow = TRUE)
-        ## Reclassify the flooded area dem
-        rcl_flood_area <- classify(flood_area, rcl_matrix, include.lowest = TRUE)
-        # Map new raster overlaying dem
-        plot(beach_dem, axes=FALSE, main = "Predicted Flood Area")
-        plot(rcl_flood_area, col= "#036ffc", axes=FALSE, add=TRUE)
-    })
+    ##Plot maps
+    plot(beach_dem, col = terrain.colors(n=200, rev=FALSE), axes=FALSE, main = "Predicted Flood Area")
+    plot(rcl_flood_area, col= "#036ffc", axes=FALSE, add=TRUE)
+  })
 }
+
 
 
 # Run the application 
